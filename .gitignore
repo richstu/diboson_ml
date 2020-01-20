@@ -1,0 +1,56 @@
+# Python
+*.pyc
+*.ipynb*
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+*.d
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+*.pcm
+
+# Fortran module files
+*.mod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Misc.
+*~
+*#
+*.root
+*.h5
+*.log
+*.pdf
+*.fdb_latexmk
+*.fls
+run/
+*.#*
+sftp-config.json
+.DS_Store
+
+# LaTeX
+*.tex
+*.aux
+*.nav
+*.snm
+*.toc
+*.gz
