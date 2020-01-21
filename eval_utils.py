@@ -14,7 +14,7 @@ import utils
 from coffea import hist
 from glob import glob
 
-def eval_model(model, path, mh_mean_train, mh_std_train):
+def eval_model(model, tag, path, mh_mean_train, mh_std_train):
   print('Reading test data: '+path)
 
   x_test, y_test, mh_mean_test, mh_std_test = utils.get_data(path)
@@ -41,8 +41,9 @@ def eval_model(model, path, mh_mean_train, mh_std_train):
   # fig, ax, __ = hist.plot1d(hsigma, overlay="method", stack=False)
   # gauss = utils.fit_gauss(hsigma.axis('sigma').centers(), hsigma.values()[('DNN',)], True)
   # ax.plot(hsigma.axis('sigma').centers(), gauss, color='green', linewidth=2.5, label=r'Fitted function')
-  fig.savefig('sigma_'+args.model_file.replace('.h5','.pdf'))
+  fig.savefig('sigma_'+tag+'.pdf')
 
+  fig = plt.figure()
   hmh = hist.Hist("Events",
                       hist.Cat("method", "Reco method"),
                       hist.Bin("mhiggs", "Higgs mass", 30, 0, 300))
@@ -52,7 +53,7 @@ def eval_model(model, path, mh_mean_train, mh_std_train):
 
   ax = hist.plot1d(hmh, overlay="method", stack=False)
   # fig, ax, __ = hist.plot1d(hmh, overlay="method", stack=False)
-  fig.savefig('mh_'+args.model_file.replace('.h5','.pdf'))
+  fig.savefig('mh_'+tag+'.pdf')
   return
 
 if __name__ == "__main__":
@@ -75,7 +76,7 @@ if __name__ == "__main__":
     test_data_path = '/net/cms29' 
   test_data_path +='/cms29r0/atto/v1/2016/raw_atto/test_raw_atto_TChiHH_HToBB_HToBB_3D_2016.root'
 
-  eval_model(model, test_data_path, mh_mean_train, mh_std_train)
+  eval_model(model, args.model_file.replace('.h5',''), test_data_path, mh_mean_train, mh_std_train)
 
   print('\nProgram took %.0f:%.0f.' % ((time()-t0)/60,(time()-t0)%60))
 

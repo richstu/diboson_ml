@@ -1,8 +1,10 @@
 #! /usr/bin/env python3
 
-import math,os,sys
+import math,os,sys, datetime
 import numpy as np
 import pandas as pd
+# to force running on CPU
+# os.environ["CUDA_VISIBLE_DEVICES"]="-1"
 import tensorflow as tf
 import tensorflow.keras as keras
 import matplotlib.pyplot as plt
@@ -38,12 +40,19 @@ if __name__ == "__main__":
   path +='/cms29r0/atto/v1/2016/raw_atto/train_raw_atto_TChiHH_HToBB_HToBB_3D_2016.root'
   print('Reading data: '+path)
   x_train, y_train, mh_mean_train, mh_std_train = utils.get_data(path)
-  # if args.random_data:
-  #   x_train = utils.get_random_data(path, x_train.shape[0],x_train.shape[1])  
+  if args.random_data:
+    x_train = np.random.randn(x_train.shape[0],x_train.shape[1])
   print('\nTook %.0f seconds to prepare data.' % (time()-t0))
 
   model = utils.define_sequential_model(x_train.shape[1], args.dense, args.nodes, args.loss, args.optimizer, args.activation)
-  history = model.fit(x_train, y_train, epochs=int(args.epochs), validation_split=args.val_frac)
+  
+  # log_dir="logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+  # tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+
+  history = model.fit(x_train, y_train, 
+                      epochs=int(args.epochs), validation_split=args.val_frac,
+                      batch_size=len(y_train))
+                      # callbacks=[tensorboard_callback])
 
   model_name = 'seq_arc-%ix%i_lay-%s_opt-%s_act-%s_epo-%i' % (args.dense, args.nodes, args.loss, args.optimizer, args.activation, args.epochs)
   model_name += '_hmean-%.3f_hstd-%.3f' % (mh_mean_train, mh_std_train)
@@ -61,6 +70,6 @@ if __name__ == "__main__":
     test_data_path = '/net/cms29' 
   test_data_path +='/cms29r0/atto/v1/2016/raw_atto/test_raw_atto_TChiHH_HToBB_HToBB_3D_2016.root'
 
-  eval_model(model, test_data_path, mh_mean_train, mh_std_train)
+  eval_model(model, model_name.replace('.h5',''), test_data_path, mh_mean_train, mh_std_train)
 
   print('\nProgram took %.0f:%.0f.' % ((time()-t0)/60,(time()-t0)%60))

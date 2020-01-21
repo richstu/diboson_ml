@@ -77,4 +77,5 @@ def get_data(path):
 
   x_data_ = np.concatenate([obj_feats_data, glob_feats_data], axis=1)
   y_data_ = np.asarray(tree['mhiggs'])
+
   return x_data_, y_data_, mh_mean, mh_std
