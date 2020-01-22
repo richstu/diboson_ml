@@ -20,14 +20,20 @@ def define_sequential_model(nfeats, dense_layers, nodes, loss, optimizer, activa
   return model_
 
 def fit_gauss(xi, yi, verbose=False):
-  sigma = math.sqrt(xi.var())
-  init  = [1./sigma/math.sqrt(2*math.pi), xi.mean(), sigma, 0.01]
   fitfunc  = lambda p, x: p[0]*np.exp(-0.5*((x-p[1])/p[2])**2)+p[3]
   errfunc  = lambda p, x, y: (y - fitfunc(p, x))
+  
+  init  = [yi.max(), xi[yi.argmax()], 30, 0.01]
   fit_result, fit_cov  = leastsq( errfunc, init, args=(xi, yi))
-  if (verbose):
-    print("Fit results: mean = %.2f, sigma = %.2f" % (fit_result[1],fit_result[2]))
-  return fitfunc(fit_result, xi)
+  print("Init values 1: coeff = %.2f, mean = %.2f, sigma = %.2f, offset = %.2f" % tuple(init))
+  print("Fit results 1: coeff = %.2f, mean = %.2f, sigma = %.2f, offset = %.2f" % tuple(fit_result))
+  
+  # redo fit just taking 2*sigma around the peak
+  mask = np.logical_and(xi > (fit_result[1]-1.5*abs(fit_result[2])), xi < (fit_result[1]+1.5*abs(fit_result[2])))
+  xi2, yi2 = xi[mask], yi[mask]
+  fit_result, fit_cov  = leastsq( errfunc, fit_result, args=(xi2, yi2))
+  print("Fit results 2: coeff = %.2f, mean = %.2f, sigma = %.2f, offset = %.2f" % tuple(fit_result))
+  return fitfunc(fit_result, xi2), mask
 
 def stack_feats(norm_tree, feat_names, max_length, dummy = -9):
   verbose = False
@@ -44,7 +50,7 @@ def stack_feats(norm_tree, feat_names, max_length, dummy = -9):
   n0_,n1_,n2_ = arr_3d.shape
   return arr_3d.reshape(n0_,n1_*n2_)
 
-def get_data(path):
+def get_data(path, do_log_transform):
   nobj = 5 # this can't be changed without remaking atto ntuples for now
   obj_feats = ['jet_pt','jet_eta','jet_phi','jet_m','jet_deepcsv']
   nobj_feats = len(obj_feats)
@@ -62,9 +68,11 @@ def get_data(path):
 
   mh_mean, mh_std = 0, 0 
   for col in tree.columns:
-    flatter = np.asarray(tree[col].flatten())
-    mean = flatter.mean()
-    std = flatter.std()
+    if do_log_transform and col in ['jet_pt','jet_m','mjj','mhiggs']:
+      tree[col] = np.log(tree[col])
+    flat_arr = np.asarray(tree[col].flatten())
+    mean = flat_arr.mean()
+    std = flat_arr.std()
     if 'mhiggs' in col: # save those to convert output later
       mh_mean = mean
       mh_std = std
