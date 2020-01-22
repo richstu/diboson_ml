@@ -25,14 +25,16 @@ def fit_gauss(xi, yi, verbose=False):
   
   init  = [yi.max(), xi[yi.argmax()], 30, 0.01]
   fit_result, fit_cov  = leastsq( errfunc, init, args=(xi, yi))
-  print("Init values 1: coeff = %.2f, mean = %.2f, sigma = %.2f, offset = %.2f" % tuple(init))
-  print("Fit results 1: coeff = %.2f, mean = %.2f, sigma = %.2f, offset = %.2f" % tuple(fit_result))
+  if (verbose):
+    print("Init values 1: coeff = %.2f, mean = %.2f, sigma = %.2f, offset = %.2f" % tuple(init))
+    print("Fit results 1: coeff = %.2f, mean = %.2f, sigma = %.2f, offset = %.2f" % tuple(fit_result))
   
   # redo fit just taking 2*sigma around the peak
   mask = np.logical_and(xi > (fit_result[1]-1.5*abs(fit_result[2])), xi < (fit_result[1]+1.5*abs(fit_result[2])))
   xi2, yi2 = xi[mask], yi[mask]
   fit_result, fit_cov  = leastsq( errfunc, fit_result, args=(xi2, yi2))
-  print("Fit results 2: coeff = %.2f, mean = %.2f, sigma = %.2f, offset = %.2f" % tuple(fit_result))
+  if (verbose):
+    print("Fit results 2: coeff = %.2f, mean = %.2f, sigma = %.2f, offset = %.2f" % tuple(fit_result))
   return fitfunc(fit_result, xi2), mask
 
 def stack_feats(norm_tree, feat_names, max_length, dummy = -9):
@@ -76,7 +78,7 @@ def get_data(path, do_log_transform):
     if 'mhiggs' in col: # save those to convert output later
       mh_mean = mean
       mh_std = std
-    print('Fearture %s has mean = %.2f and std = %.2f' % (col, mean, std))
+    # print('Fearture %s has mean = %.2f and std = %.2f' % (col, mean, std))
     tree[col] = tree[col] - mean
     tree[col] = tree[col]*(1/std)
 

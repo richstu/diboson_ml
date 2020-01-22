@@ -13,7 +13,7 @@ from time import time
 import argparse
 import utils
 from coffea import hist
-from termcolor import colored
+from termcolor import colored, cprint
 
 from eval_dnn import eval_dnn
 
