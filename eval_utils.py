@@ -8,9 +8,26 @@ import uproot
 from time import time
 from coffea import hist
 from glob import glob
-import utils
 from termcolor import colored, cprint
 from collections import OrderedDict
+
+def fit_gauss(xi, yi, verbose=False):
+  fitfunc  = lambda p, x: p[0]*np.exp(-0.5*((x-p[1])/p[2])**2)+p[3]
+  errfunc  = lambda p, x, y: (y - fitfunc(p, x))
+  
+  init  = [yi.max(), xi[yi.argmax()], 30, 0.01]
+  fit_result, fit_cov  = leastsq( errfunc, init, args=(xi, yi))
+  if (verbose):
+    print("Init values 1: coeff = %.2f, mean = %.2f, sigma = %.2f, offset = %.2f" % tuple(init))
+    print("Fit results 1: coeff = %.2f, mean = %.2f, sigma = %.2f, offset = %.2f" % tuple(fit_result))
+  
+  # redo fit just taking 2*sigma around the peak
+  mask = np.logical_and(xi > (fit_result[1]-1.5*abs(fit_result[2])), xi < (fit_result[1]+1.5*abs(fit_result[2])))
+  xi2, yi2 = xi[mask], yi[mask]
+  fit_result, fit_cov  = leastsq( errfunc, fit_result, args=(xi2, yi2))
+  if (verbose):
+    print("Fit results 2: coeff = %.2f, mean = %.2f, sigma = %.2f, offset = %.2f" % tuple(fit_result))
+  return fitfunc(fit_result, xi2), mask
 
 def plot_resolution(tag, y_test, y_pred, y_cb):
   sigma_dnn = y_test - y_pred
@@ -27,9 +44,9 @@ def plot_resolution(tag, y_test, y_pred, y_cb):
 
   fig = plt.figure()
   ax = hist.plot1d(hsigma, overlay="method", stack=False)
-  gauss, mask = utils.fit_gauss(hsigma.axis('sigma').centers(), hsigma.values()[('DNN',)])
+  gauss, mask = fit_gauss(hsigma.axis('sigma').centers(), hsigma.values()[('DNN',)])
   ax.plot(hsigma.axis('sigma').centers()[mask], gauss, color='maroon', linewidth=1, label=r'Fitted function')
-  gauss, mask = utils.fit_gauss(hsigma.axis('sigma').centers(), hsigma.values()[('CB',)])
+  gauss, mask = fit_gauss(hsigma.axis('sigma').centers(), hsigma.values()[('CB',)])
   ax.plot(hsigma.axis('sigma').centers()[mask], gauss, color='navy', linewidth=1, label=r'Fitted function')
   filename = 'sigma_'+tag+'.pdf'
   fig.savefig(filename)
@@ -90,7 +107,6 @@ def get_predictions(model, test_data_path, mh_mean_train, mh_std_train, do_log_t
   return y_test, y_pred
 
 def eval_dnn(model, model_name, test_data_path, mh_mean_train, mh_std_train, do_log_transform, do_figs=True):
-  model_name = args.model_file.replace('.h5','')
   y_test, y_pred = get_predictions(model, test_data_path, mh_mean_train, mh_std_train, do_log_transform)
   # Read some extra branches for evaluation studies
   branches = ['hig_am','nbacc','njet', 'mchi','mlsp']
@@ -100,7 +116,7 @@ def eval_dnn(model, model_name, test_data_path, mh_mean_train, mh_std_train, do_
   seln_dict = OrderedDict()
   seln_dict['none'] = None
   seln_dict['nbacc_geq_4'] = np.asarray(tree['nbacc'])>=4
-  seln_dict['njet4'] = (seln_dict['nbacc_geq_4']) & (np.asarray(tree['njet'])==4)
+  # seln_dict['njet4'] = (seln_dict['nbacc_geq_4']) & (np.asarray(tree['njet'])==4)
 
   for iseln,mask in seln_dict.items():
     cprint('\nEvaluating selection: '+iseln,'yellow')

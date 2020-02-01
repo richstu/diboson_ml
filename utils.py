@@ -13,79 +13,60 @@ def define_sequential_model(nfeats, dense_layers, nodes, loss, optimizer, activa
   model_ = keras.models.Sequential()
   model_.add(keras.layers.Input(shape=(nfeats)))
   for i in range(dense_layers):
-    model_.add(keras.layers.Dense(nodes, activation=activation))
+    model_.add(keras.layers.Dense(nodes, activation=activation, kernel_initializer="lecun_normal"))
   model_.add(keras.layers.Dense(1))
   model_.compile(loss=loss, optimizer=optimizer)
   model_.summary()
   return model_
 
-def fit_gauss(xi, yi, verbose=False):
-  fitfunc  = lambda p, x: p[0]*np.exp(-0.5*((x-p[1])/p[2])**2)+p[3]
-  errfunc  = lambda p, x, y: (y - fitfunc(p, x))
-  
-  init  = [yi.max(), xi[yi.argmax()], 30, 0.01]
-  fit_result, fit_cov  = leastsq( errfunc, init, args=(xi, yi))
-  if (verbose):
-    print("Init values 1: coeff = %.2f, mean = %.2f, sigma = %.2f, offset = %.2f" % tuple(init))
-    print("Fit results 1: coeff = %.2f, mean = %.2f, sigma = %.2f, offset = %.2f" % tuple(fit_result))
-  
-  # redo fit just taking 2*sigma around the peak
-  mask = np.logical_and(xi > (fit_result[1]-1.5*abs(fit_result[2])), xi < (fit_result[1]+1.5*abs(fit_result[2])))
-  xi2, yi2 = xi[mask], yi[mask]
-  fit_result, fit_cov  = leastsq( errfunc, fit_result, args=(xi2, yi2))
-  if (verbose):
-    print("Fit results 2: coeff = %.2f, mean = %.2f, sigma = %.2f, offset = %.2f" % tuple(fit_result))
-  return fitfunc(fit_result, xi2), mask
-
-def stack_feats(norm_tree, feat_names, max_length, dummy = -9):
-  verbose = False
-  # pad the number of objects for each feature, so that there is always 5 objects, filling with 9's
-  # to use just the top 4 jets -> change max_length to 4 and clip to True (N.B. global features would require dropping things too...)
-  padded_data = norm_tree[feat_names].pad(max_length,axis=0,clip=False).fillna(dummy)
-  if verbose: pprint(padded_data.contents)
-  # then, convert ordered dict of ChunkedArray to numpy 3D array: axis 0 = ith feature; axis 1 = ith event, axis 2 = ith jet
-  arr_3d = np.asarray([padded_data[ifeat].regular() for ifeat in feat_names])
-  # then, stack features so now arr_3d is interpreted as a list of 2D arrays with axis 0 = ith event, axis 1 = ith jet
-  # output is then axis 0 = ith event, axis 1 = ith jet, axis 2 = ith feature
-  arr_3d = np.stack(arr_3d, axis=2)
-  # finally, reshape to concatenate features for all jets into 1D array (axis 0 remains = ith event)
-  n0_,n1_,n2_ = arr_3d.shape
-  return arr_3d.reshape(n0_,n1_*n2_)
-
-def get_data(path, do_log_transform):
+def get_data(path, do_log_transform, dummy = -9):
   nobj = 5 # this can't be changed without remaking atto ntuples for now
-  obj_feats = ['jet_pt','jet_eta','jet_phi','jet_m','jet_deepcsv']
-  nobj_feats = len(obj_feats)
-
-  glob_feats = ['mjj','drjj']
+  obj_feats = [b'jet_brank_pt',b'jet_brank_eta',b'jet_brank_phi',b'jet_brank_m',b'jet_brank_deepcsv']
   ncombinations = int(math.factorial(nobj)/(2*math.factorial(nobj-2)))
+  glob_feats = [b'mjj',b'drjj']
+  nfeats = nobj*len(obj_feats) + ncombinations*len(glob_feats)
 
-  branches = ['mhiggs']
+  branches = [b'mhiggs']
   branches.extend(obj_feats)
   branches.extend(glob_feats)
-
-  tree = uproot.tree.lazyarrays(path=path, treepath='tree', branches=branches, namedecode='utf-8')
+  tree = uproot.open(path=path)['tree']
   print('Found %i entries' % len(tree))
-  # print(tree.contents)
+  awk_arrays = tree.arrays(branches)
 
+  # create array with the final size to reduce copying
+  x_data_ = np.empty(shape=(len(tree),nfeats))
+
+  # normalize all features, saving the normalization parameters for the higgs mass in order to transform the output
   mh_mean, mh_std = 0, 0 
-  for col in tree.columns:
-    if do_log_transform and col in ['jet_pt','jet_m','mjj','mhiggs']:
-      tree[col] = np.log(tree[col])
-    flat_arr = np.asarray(tree[col].flatten())
-    mean = flat_arr.mean()
-    std = flat_arr.std()
-    if 'mhiggs' in col: # save those to convert output later
-      mh_mean = mean
-      mh_std = std
-    # print('Fearture %s has mean = %.2f and std = %.2f' % (col, mean, std))
-    tree[col] = tree[col] - mean
-    tree[col] = tree[col]*(1/std)
+  for branch in branches:
+    if do_log_transform and col in [b'jet_brank_pt',b'jet_brank_m',b'mjj']:
+      awk_arrays[branch] = np.log(awk_arrays[branch])
+    # flatten to compute mean and std
+    flat_arr = awk_arrays[branch].flatten()
+    mean, std = flat_arr.mean(), flat_arr.std()
+    awk_arrays[branch] = awk_arrays[branch] - mean
+    awk_arrays[branch] = awk_arrays[branch]*(1/std)
+    if b'mhiggs' in branch: # save those to convert output later
+      mh_mean, mh_std = mean, std
+    # print('Fearture %s has mean = %.2f and std = %.2f' % (branch, mean, std))
 
-  obj_feats_data = stack_feats(tree, obj_feats, nobj)
-  glob_feats_data = stack_feats(tree, glob_feats, ncombinations)
+  # shape up jet features data
+  for i, branch in enumerate(obj_feats):
+    # pad the jet arrays so all events have 5 jets
+    awk_arrays[branch] = awk_arrays[branch].pad(nobj,axis=0,clip=True).fillna(dummy)
+    # convert to 2D numpy array
+    awk_arrays[branch] = awk_arrays[branch].regular()
+    # fill the jet data in the final array such that the order is j1_pt, j1_eta, ..., j1_csv, j2_pt, j2_eta...
+    # by assigning the array for each jet feature to an interleaved view of the large x_data_ array
+    # this will fill up the x_data array until nobj*len(obj_feats) along axis 1
+    x_data_[:,i:nobj*len(obj_feats):len(obj_feats)] = awk_arrays[branch]
 
-  x_data_ = np.concatenate([obj_feats_data, glob_feats_data], axis=1)
-  y_data_ = np.asarray(tree['mhiggs'])
-
+  # shape up global features data
+  for i, branch in enumerate(glob_feats):
+    awk_arrays[branch] = awk_arrays[branch].pad(ncombinations,axis=0,clip=True).fillna(dummy)
+    awk_arrays[branch] = awk_arrays[branch].regular()
+    # fill global data starting after the jet data, i.e at nobj*len(obj_feats) along axis 1
+    x_data_[:,nobj*len(obj_feats)+i::len(glob_feats)] = awk_arrays[branch]
+  
+  y_data_ = awk_arrays[b'mhiggs']
   return x_data_, y_data_, mh_mean, mh_std
