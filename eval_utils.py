@@ -10,6 +10,7 @@ from coffea import hist
 from glob import glob
 from termcolor import colored, cprint
 from collections import OrderedDict
+import utils
 
 def fit_gauss(xi, yi, verbose=False):
   fitfunc  = lambda p, x: p[0]*np.exp(-0.5*((x-p[1])/p[2])**2)+p[3]
@@ -93,21 +94,21 @@ def find_max_eff(tag, y_test, y_pred, mass_window_width=40):
   print('--> Method: {:>10s}, sig. eff = {:.0f}%, peak pos = {:.0f} (width = {:.0f})'.format(tag, sig_eff,mass_window_pos,mass_window_width))
   return sig_eff, mass_window_pos
 
-def get_predictions(model, test_data_path, mh_mean_train, mh_std_train, do_log_transform):
+def get_predictions(model, test_data_path, mh_mean_train, mh_std_train, do_log, read_mhiggs=True):
   print('Reading test data: '+colored(test_data_path,'yellow'))
-  x_test, y_test, mh_mean_test, mh_std_test = utils.get_data(test_data_path, do_log_transform)
+  x_test, y_test, mh_mean_test, mh_std_test = utils.get_data(test_data_path, read_mhiggs, do_log)
   y_pred = model.predict(x_test).flatten()
-  if do_log_transform:
+  if do_log:
     # @hack adding 1e-5 because the exp(log()) imprecision makes values jump to neighbor bin
-    y_test = np.exp(y_test*mh_std_test + mh_mean_test) +1e-5 
+    if (read_mhiggs): y_test = np.exp(y_test*mh_std_test + mh_mean_test) +1e-5 
     y_pred = np.exp(y_pred*mh_std_train + mh_mean_train) +1e-5
   else:
-    y_test = y_test*mh_std_test + mh_mean_test
+    if (read_mhiggs): y_test = y_test*mh_std_test + mh_mean_test
     y_pred = y_pred*mh_std_train + mh_mean_train
   return y_test, y_pred
 
-def eval_dnn(model, model_name, test_data_path, mh_mean_train, mh_std_train, do_log_transform, do_figs=True):
-  y_test, y_pred = get_predictions(model, test_data_path, mh_mean_train, mh_std_train, do_log_transform)
+def eval_dnn(model, model_name, test_data_path, mh_mean_train, mh_std_train, do_log, do_figs=True):
+  y_test, y_pred = get_predictions(model, test_data_path, mh_mean_train, mh_std_train, do_log)
   # Read some extra branches for evaluation studies
   branches = ['hig_am','nbacc','njet', 'mchi','mlsp']
   tree = uproot.tree.lazyarrays(path=test_data_path, treepath='tree', branches=branches, namedecode='utf-8')
@@ -151,8 +152,8 @@ if __name__ == "__main__":
     test_data_path = '/net/cms29' 
   test_data_path +='/cms29r0/atto/v1/2016/raw_atto/test_raw_atto_TChiHH_HToBB_HToBB_3D_2016.root'
 
-  do_log_transform = ('_log' in args.model_file)
-  eval_dnn(model, args.model_file.replace('.h5',''), test_data_path, mh_mean_train, mh_std_train, do_log_transform)
+  do_log = ('_log' in args.model_file)
+  eval_dnn(model, args.model_file.replace('.h5',''), test_data_path, mh_mean_train, mh_std_train, do_log)
 
   print('\nProgram took %.0fm %.0fs.' % ((time()-t0)/60,(time()-t0)%60))
 

@@ -19,14 +19,15 @@ def define_sequential_model(nfeats, dense_layers, nodes, loss, optimizer, activa
   model_.summary()
   return model_
 
-def get_data(path, do_log_transform, dummy = -9):
+def get_data(path, read_mhiggs=True, do_log=False, dummy = -9):
   nobj = 5 # this can't be changed without remaking atto ntuples for now
   obj_feats = [b'jet_brank_pt',b'jet_brank_eta',b'jet_brank_phi',b'jet_brank_m',b'jet_brank_deepcsv']
   ncombinations = int(math.factorial(nobj)/(2*math.factorial(nobj-2)))
   glob_feats = [b'mjj',b'drjj']
   nfeats = nobj*len(obj_feats) + ncombinations*len(glob_feats)
 
-  branches = [b'mhiggs']
+  branches = []
+  if read_mhiggs: branches.append(b'mhiggs')
   branches.extend(obj_feats)
   branches.extend(glob_feats)
   tree = uproot.open(path=path)['tree']
@@ -39,7 +40,8 @@ def get_data(path, do_log_transform, dummy = -9):
   # normalize all features, saving the normalization parameters for the higgs mass in order to transform the output
   mh_mean, mh_std = 0, 0 
   for branch in branches:
-    if do_log_transform and col in [b'jet_brank_pt',b'jet_brank_m',b'mjj']:
+    # print('Processing branch:',branch)
+    if do_log and col in [b'jet_brank_pt',b'jet_brank_m',b'mjj']:
       awk_arrays[branch] = np.log(awk_arrays[branch])
     # flatten to compute mean and std
     flat_arr = awk_arrays[branch].flatten()
@@ -68,5 +70,6 @@ def get_data(path, do_log_transform, dummy = -9):
     # fill global data starting after the jet data, i.e at nobj*len(obj_feats) along axis 1
     x_data_[:,nobj*len(obj_feats)+i::len(glob_feats)] = awk_arrays[branch]
   
-  y_data_ = awk_arrays[b'mhiggs']
+  y_data_ = None
+  if (read_mhiggs): awk_arrays[b'mhiggs']
   return x_data_, y_data_, mh_mean, mh_std
