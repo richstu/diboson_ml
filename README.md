@@ -5,7 +5,7 @@ git clone git@github.com:richstu/diboson_ml.git
 source set_env.sh
 ~~~~
 
-# Prepare the data (nano2pico)
+## Prepare the data (nano2pico)
 
 Run make_atto in the nano2pico repository, e.g.:
 
@@ -18,7 +18,7 @@ The output folder would then be set to `/net/cms29/cms29r0/atto/v2/2016/raw_atto
 ~~~~bash
 cd /net/cms29/cms29r0/atto/v2/2016/raw_atto/
 mkdir test train
-# the files starting with the digit 5 are approximately 20%, so set these aside for the test
+## the files starting with the digit 5 are approximately 20%, so set these aside for the test
 mv raw_atto_TChiHH_HToBB_HToBB_3D_2016_file5* test/
 mv raw_atto_TChiHH_HToBB_HToBB_3D_2016_file* train/
 cd -
@@ -30,7 +30,7 @@ cd -
                             -i /cms29r0/atto/v2/2016/raw_atto/train/*root
 ~~~~
 
-# Training the NN
+## Training the NN
 So far just a simple feed-forward NN, use:
 
 ~~~~bash
@@ -39,7 +39,18 @@ So far just a simple feed-forward NN, use:
 
 See `-h` for a list of all the options.
 
-# Evaluating performance on a test sample
+## Saving output
+
+Intended to run on merged pico files, preferrably some sort of skim since there is no point in evaluating the DNN for events that will not be looked at. Requires the model saved as .h5 file, as done in `train_dnn.py`. 
+
+~~~~bash
+./save_dnn_output.py -i /net/cms29/cms29r0/pico/NanoAODv5/higgsino_eldorado/2016/mc/higfeats_higloose/ \
+                     -m models/MLP5x200_mean_absolute_error_adam_elu_e30_hmean-146p020_hstd-59p933.h5
+~~~~
+
+The result is that for each file in the input folder, an output file is created saving the dnn output (just one float per event). The `pico` and `dnnout` file can then be zipped together using `nano2pico/run/zip_pico_dnnout.exe`.
+
+## Evaluating performance on a test sample
 
 More plotting using the pre-trained model to be added to:
 
