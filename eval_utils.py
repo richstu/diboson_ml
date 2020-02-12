@@ -94,44 +94,37 @@ def find_max_eff(tag, y_test, y_pred, mass_window_width=40):
   print('--> Method: {:>10s}, sig. eff = {:.0f}%, peak pos = {:.0f} (width = {:.0f})'.format(tag, sig_eff,mass_window_pos,mass_window_width))
   return sig_eff, mass_window_pos
 
-def get_predictions(model, test_data_path, mh_mean_train, mh_std_train, do_log, read_mhiggs=True):
+def get_predictions(model, test_data_path, do_log):
   print('Reading test data: '+colored(test_data_path,'yellow'))
-  x_test, y_test, mh_mean_test, mh_std_test = utils.get_data(test_data_path, read_mhiggs, do_log)
+  x_test, y_test = utils.get_data(test_data_path, do_log)
   y_pred = model.predict(x_test).flatten()
-  if do_log:
-    # @hack adding 1e-5 because the exp(log()) imprecision makes values jump to neighbor bin
-    if (read_mhiggs): y_test = np.exp(y_test*mh_std_test + mh_mean_test) +1e-5 
-    y_pred = np.exp(y_pred*mh_std_train + mh_mean_train) +1e-5
-  else:
-    if (read_mhiggs): y_test = y_test*mh_std_test + mh_mean_test
-    y_pred = y_pred*mh_std_train + mh_mean_train
   return y_test, y_pred
 
-def eval_dnn(model, model_name, test_data_path, mh_mean_train, mh_std_train, do_log, do_figs=True):
-  y_test, y_pred = get_predictions(model, test_data_path, mh_mean_train, mh_std_train, do_log)
+def eval_dnn(model, model_name, test_data_path, do_log, do_figs=True):
+  y_test, y_pred = get_predictions(model, test_data_path, do_log)
   # Read some extra branches for evaluation studies
-  branches = ['hig_am','nbacc','njet', 'mchi','mlsp']
-  tree = uproot.tree.lazyarrays(path=test_data_path, treepath='tree', branches=branches, namedecode='utf-8')
-  y_cb = np.asarray(tree['hig_am'])
+  # branches = ['hig_cand_am','njet', 'mchi','mlsp']
+  # tree = uproot.tree.lazyarrays(path=test_data_pico_path, treepath='tree', branches=branches, namedecode='utf-8')
+  # y_cb = None #np.asarray(tree['hig_cand_am'])
 
-  seln_dict = OrderedDict()
-  seln_dict['none'] = None
-  seln_dict['nbacc_geq_4'] = np.asarray(tree['nbacc'])>=4
-  # seln_dict['njet4'] = (seln_dict['nbacc_geq_4']) & (np.asarray(tree['njet'])==4)
+  # seln_dict = OrderedDict()
+  # seln_dict['none'] = None
+  # # seln_dict['nbacc_geq_4'] = np.asarray(tree['nbacc'])>=4
+  # # seln_dict['njet4'] = (seln_dict['nbacc_geq_4']) & (np.asarray(tree['njet'])==4)
 
-  for iseln,mask in seln_dict.items():
-    cprint('\nEvaluating selection: '+iseln,'yellow')
-    if mask is not None:
-      y_test_good, y_pred_good, y_cb_good = y_test[mask], y_pred[mask], y_cb[mask]
-    else:
-      y_test_good, y_pred_good, y_cb_good = y_test, y_pred, y_cb
+  # for iseln,mask in seln_dict.items():
+  #   cprint('\nEvaluating selection: '+iseln,'yellow')
+  #   if mask is not None:
+  #     y_test_good, y_pred_good, y_cb_good = y_test[mask], y_pred[mask], y_cb[mask]
+  #   else:
+  #     y_test_good, y_pred_good, y_cb_good = y_test, y_pred, y_cb
 
-    find_max_eff('DNN__'+iseln, y_test_good, y_pred_good, mass_window_width=40)
-    find_max_eff('CB__'+iseln, y_test_good, y_cb_good, mass_window_width=40)
+  find_max_eff('DNN', y_test, y_pred, mass_window_width=40)
+    # find_max_eff('CB__'+iseln, y_test_good, y_cb_good, mass_window_width=40)
 
-    tag = iseln+'__'+model_name  # for filename
-    plot_resolution(tag, y_test_good, y_pred_good, y_cb_good)
-    plot_mhiggs(tag, y_test_good, y_pred_good, y_cb_good)
+    # tag = iseln+'__'+model_name  # for filename
+    # plot_resolution(tag, y_test_good, y_pred_good, y_cb_good)
+    # plot_mhiggs(tag, y_test_good, y_pred_good, y_cb_good)
 
   return
 
@@ -139,21 +132,17 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='Evaluate model performance.')
   parser.add_argument('--cpu', help='Use cpu', action='store_true')
   parser.add_argument('-m','--model_file', help='File containing trained model to evaluate.',
-                      default='seq_arc-4x400_lay-mean_squared_error_opt-adam_act-relu_epo-10_hmean-149p612_hstd-60p171.h5')
+                      default='MLP5x200_mean_absolute_error_adam_elu_e30_log.h5')
   args = parser.parse_args()
 
   t0 = time()
   model = keras.models.load_model(args.model_file)
-  mh_std_train = float(args.model_file.split('_hstd-')[1].split('.h5')[0].replace('p','.'))
-  mh_mean_train = float(args.model_file.split('_hmean-')[1].split('_')[0].replace('p','.'))
 
-  test_data_path = ''
-  if os.getenv('HOSTNAME'):
-    test_data_path = '/net/cms29' 
-  test_data_path +='/cms29r0/atto/v1/2016/raw_atto/test_raw_atto_TChiHH_HToBB_HToBB_3D_2016.root'
+  test_data_path =('/net/cms29/cms29r0/pico/NanoAODv5/higgsino_eldorado/2016/dnn_mc/higfeats_unskimmed/'+
+  'higfeats_raw_pico_SMS-TChiHH_HToBB_HToBB_3D_TuneCUETP8M1_13TeV-madgraphMLM-pythia8__RunIISummer16NanoAODv5__PUMoriond17_Nano1June2019_102X_mcRun2_asymptotic_v7_test.root')
 
   do_log = ('_log' in args.model_file)
-  eval_dnn(model, args.model_file.replace('.h5',''), test_data_path, mh_mean_train, mh_std_train, do_log)
+  eval_dnn(model, args.model_file.replace('.h5',''), test_data_path, do_log)
 
   print('\nProgram took %.0fm %.0fs.' % ((time()-t0)/60,(time()-t0)%60))
 

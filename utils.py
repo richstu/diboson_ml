@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-import math
+import math, json
 import numpy as np
 import uproot
 from coffea import hist
@@ -19,38 +19,65 @@ def define_sequential_model(nfeats, dense_layers, nodes, loss, optimizer, activa
   model_.summary()
   return model_
 
-def get_data(path, read_mhiggs=True, do_log=False, dummy = -9):
-  nobj = 5 # this can't be changed without remaking atto ntuples for now
+def get_data(path, do_log=False, training = False, dummy = -9):
+  nobj = 5 # this can't be changed without remaking higfeats ntuples since mjj also has to change
   obj_feats = [b'jet_brank_pt',b'jet_brank_eta',b'jet_brank_phi',b'jet_brank_m',b'jet_brank_deepcsv']
   ncombinations = int(math.factorial(nobj)/(2*math.factorial(nobj-2)))
   glob_feats = [b'mjj',b'drjj']
   nfeats = nobj*len(obj_feats) + ncombinations*len(glob_feats)
 
   branches = []
-  if read_mhiggs: branches.append(b'mhiggs')
+  if training: 
+    branches.append(b'mhiggs')
   branches.extend(obj_feats)
   branches.extend(glob_feats)
   tree = uproot.open(path=path)['tree']
   print('Found %i entries' % len(tree))
   awk_arrays = tree.arrays(branches)
 
+  # cut off the threshold peak at 50 due to Pythia minimum mass
+  mask = None
+  if (training): 
+    mask = awk_arrays[b'mhiggs']>51 
+
   # create array with the final size to reduce copying
-  x_data_ = np.empty(shape=(len(tree),nfeats))
+  rows = len(tree)
+  if (training): 
+    rows = np.count_nonzero(mask)
+  x_data_ = np.empty(shape=(rows,nfeats))
 
   # normalize all features, saving the normalization parameters for the higgs mass in order to transform the output
-  mh_mean, mh_std = 0, 0 
+  norm_dict = {}
+  if not training:
+    with open("norm_dict.json","r") as fin:
+      norm_dict = json.load(fin)
+
   for branch in branches:
+    if mask is not None:
+      awk_arrays[branch] = awk_arrays[branch][mask]
+    # do not normalize output
+    if b'mhiggs' in branch:
+      continue
     # print('Processing branch:',branch)
-    if do_log and col in [b'jet_brank_pt',b'jet_brank_m',b'mjj']:
+    if do_log and branch in [b'jet_brank_pt',b'jet_brank_m',b'mjj']:
       awk_arrays[branch] = np.log(awk_arrays[branch])
     # flatten to compute mean and std
-    flat_arr = awk_arrays[branch].flatten()
-    mean, std = flat_arr.mean(), flat_arr.std()
+    mean, std = 0, 0
+    if training:
+      flat_arr = awk_arrays[branch].flatten()
+      mean, std = flat_arr.mean(), flat_arr.std()
+      norm_dict[branch.decode()] = (str(mean), str(std))
+    else:
+      mean, std = float(norm_dict[branch.decode()][0]), float(norm_dict[branch.decode()][1])
     awk_arrays[branch] = awk_arrays[branch] - mean
     awk_arrays[branch] = awk_arrays[branch]*(1/std)
-    if b'mhiggs' in branch: # save those to convert output later
-      mh_mean, mh_std = mean, std
-    # print('Fearture %s has mean = %.2f and std = %.2f' % (branch, mean, std))
+    # if b'mhiggs' in branch: # save those to convert output later
+    #   mh_mean, mh_std = mean, std
+    print('Fearture %s has mean = %.2f and std = %.2f' % (branch, mean, std))
+
+  if training:
+    with open("norm_dict.json","w") as fout:
+      fout.write(json.dumps(norm_dict))
 
   # shape up jet features data
   for i, branch in enumerate(obj_feats):
@@ -71,5 +98,7 @@ def get_data(path, read_mhiggs=True, do_log=False, dummy = -9):
     x_data_[:,nobj*len(obj_feats)+i::len(glob_feats)] = awk_arrays[branch]
   
   y_data_ = None
-  if (read_mhiggs): awk_arrays[b'mhiggs']
-  return x_data_, y_data_, mh_mean, mh_std
+  if training: 
+    y_data_ = awk_arrays[b'mhiggs']
+
+  return x_data_, y_data_
