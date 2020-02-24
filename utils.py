@@ -3,11 +3,13 @@
 import math, json
 import numpy as np
 import uproot
+import awkward
 from coffea import hist
 import matplotlib.pyplot as plt
 from scipy.optimize import leastsq
 import tensorflow.keras as keras
 from pprint import pprint
+from termcolor import colored, cprint
 
 def define_sequential_model(nfeats, dense_layers, nodes, loss, optimizer, activation):
   model_ = keras.models.Sequential()
@@ -19,7 +21,8 @@ def define_sequential_model(nfeats, dense_layers, nodes, loss, optimizer, activa
   model_.summary()
   return model_
 
-def get_data(path, do_log=False, training = False, dummy = -9):
+def get_data(model_name, path, extra_path='', do_log=False, training=False, nent=-1, dummy=-9):
+  debug = False
   nobj = 5 # this can't be changed without remaking higfeats ntuples since mjj also has to change
   obj_feats = [b'jet_brank_pt',b'jet_brank_eta',b'jet_brank_phi',b'jet_brank_m',b'jet_brank_deepcsv']
   ncombinations = int(math.factorial(nobj)/(2*math.factorial(nobj-2)))
@@ -33,28 +36,37 @@ def get_data(path, do_log=False, training = False, dummy = -9):
   branches.extend(glob_feats)
   tree = uproot.open(path=path)['tree']
   print('Found %i entries' % len(tree))
-  awk_arrays = tree.arrays(branches)
+  
+  awk_arrays = tree.arrays(branches, entrystop=nent)
 
-  # cut off the threshold peak at 50 due to Pythia minimum mass
-  mask = None
-  if (training): 
-    mask = awk_arrays[b'mhiggs']>51 
+  if debug:
+    cprint("Training sig:","red")
+    for branch in branches:
+      print(awk_arrays[branch])
 
-  # create array with the final size to reduce copying
-  rows = len(tree)
-  if (training): 
-    rows = np.count_nonzero(mask)
-  x_data_ = np.empty(shape=(rows,nfeats))
+  if extra_path!='': # if we want to add bkg events to the training
+    extra_tree = uproot.open(path=extra_path)['tree']
+    print('Found %i entries in additional tree' % len(extra_tree))   
+    awk_arrays_bkg = extra_tree.arrays(branches, entrystop=nent)
+    awk_arrays_bkg[b'mhiggs'] = np.random.randint(0,500,len(awk_arrays_bkg[branches[0]]))
+    awk_arrays_bkg[b'mhiggs'] = np.around(awk_arrays_bkg[b'mhiggs']/5, decimals=0)*5
+    for branch in branches:
+      awk_arrays[branch] = awkward.concatenate([awk_arrays[branch],awk_arrays_bkg[branch]],axis=0)
+
+  if debug:
+    cprint("Training data:","red")
+    for branch in branches:
+      print(awk_arrays[branch])
+
+  x_data_ = np.empty(shape=(len(awk_arrays[branches[0]]),nfeats))
 
   # normalize all features, saving the normalization parameters for the higgs mass in order to transform the output
   norm_dict = {}
   if not training:
-    with open("norm_dict.json","r") as fin:
+    with open(model_name+".json","r") as fin:
       norm_dict = json.load(fin)
 
   for branch in branches:
-    if mask is not None:
-      awk_arrays[branch] = awk_arrays[branch][mask]
     # do not normalize output
     if b'mhiggs' in branch:
       continue
@@ -71,12 +83,10 @@ def get_data(path, do_log=False, training = False, dummy = -9):
       mean, std = float(norm_dict[branch.decode()][0]), float(norm_dict[branch.decode()][1])
     awk_arrays[branch] = awk_arrays[branch] - mean
     awk_arrays[branch] = awk_arrays[branch]*(1/std)
-    # if b'mhiggs' in branch: # save those to convert output later
-    #   mh_mean, mh_std = mean, std
     print('Fearture %s has mean = %.2f and std = %.2f' % (branch, mean, std))
 
   if training:
-    with open("norm_dict.json","w") as fout:
+    with open(model_name+".json","w") as fout:
       fout.write(json.dumps(norm_dict))
 
   # shape up jet features data
