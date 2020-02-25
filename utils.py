@@ -39,7 +39,10 @@ def get_data(model_name, path, extra_path='', do_log=False, training=False, nent
   if (nent!=-1): nsig = nent
   print('Found %i entries' % nsig)
   
-  awk_arrays = tree.arrays(branches, entrystop=nent)
+  if (nent==-1): 
+    awk_arrays = tree.arrays(branches)
+  else: 
+    awk_arrays = tree.arrays(branches, entrystop=nent)
 
   if debug:
     cprint("Training sig:","red")
@@ -48,8 +51,11 @@ def get_data(model_name, path, extra_path='', do_log=False, training=False, nent
 
   if extra_path!='': # if we want to add bkg events to the training
     extra_tree = uproot.open(path=extra_path)['tree']
-    print('Found %i entries in additional tree' % len(extra_tree))   
-    awk_arrays_bkg = extra_tree.arrays(branches, entrystop=nent)
+    print('Found %i entries in additional tree' % len(extra_tree))  
+    if (nent==-1): 
+      awk_arrays_bkg = extra_tree.arrays(branches)
+    else: 
+      awk_arrays_bkg = extra_tree.arrays(branches, entrystop=nent)
     awk_arrays_bkg[b'mhiggs'] = awk_arrays_bkg[b'mjj'].min()
     # awk_arrays_bkg[b'mhiggs'] = np.random.randint(50,250,len(awk_arrays_bkg[branches[0]]))
     awk_arrays_bkg[b'mhiggs'] = np.around(awk_arrays_bkg[b'mhiggs']/5, decimals=0)*5
@@ -86,7 +92,8 @@ def get_data(model_name, path, extra_path='', do_log=False, training=False, nent
       mean, std = float(norm_dict[branch.decode()][0]), float(norm_dict[branch.decode()][1])
     awk_arrays[branch] = awk_arrays[branch] - mean
     awk_arrays[branch] = awk_arrays[branch]*(1/std)
-    print('Fearture %s has mean = %.2f and std = %.2f' % (branch, mean, std))
+    if training:
+      print('Fearture %s has mean = %.2f and std = %.2f' % (branch, mean, std))
 
   if training:
     with open(model_name+".json","w") as fout:
