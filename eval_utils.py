@@ -10,6 +10,7 @@ from coffea import hist
 from glob import glob
 from termcolor import colored, cprint
 from collections import OrderedDict
+from scipy.optimize import leastsq
 import utils
 
 def fit_gauss(xi, yi, verbose=False):
@@ -30,45 +31,50 @@ def fit_gauss(xi, yi, verbose=False):
     print("Fit results 2: coeff = %.2f, mean = %.2f, sigma = %.2f, offset = %.2f" % tuple(fit_result))
   return fitfunc(fit_result, xi2), mask
 
-def plot_resolution(tag, y_test, y_pred, y_cb):
+def plot_resolution(tag, y_pred, y_test, y_cb=None):
   sigma_dnn = y_test - y_pred
-  sigma_cb = y_test - y_cb
+  if y_cb is not None: sigma_cb = y_test - y_cb
 
   hsigma = hist.Hist("Events",
                       hist.Cat("method", "Reco method"),
-                      hist.Bin("sigma", "True - Predicted", 80, -200, 200))
+                      hist.Bin("sigma", "True - Predicted", 100, -100, 100))
   hsigma.fill(method="DNN", sigma=sigma_dnn)
-  hsigma.fill(method="CB", sigma=sigma_cb)
+  if y_cb is not None:
+    hsigma.fill(method="CB", sigma=sigma_cb)
   # print(hsigma.values())
-  print('\nDNN mean = %.2f, std = %.2f' % (np.mean(sigma_dnn), np.std(sigma_dnn)))
-  print('CB mean = %.2f, std = %.2f' % (np.mean(sigma_cb), np.std(sigma_cb)))
+  print('DNN mean = %.2f, std = %.2f' % (np.mean(sigma_dnn), np.std(sigma_dnn)))
+  if y_cb is not None:
+    print('CB mean = %.2f,x std = %.2f' % (np.mean(sigma_cb), np.std(sigma_cb)))
 
   fig = plt.figure()
   ax = hist.plot1d(hsigma, overlay="method", stack=False)
-  gauss, mask = fit_gauss(hsigma.axis('sigma').centers(), hsigma.values()[('DNN',)])
-  ax.plot(hsigma.axis('sigma').centers()[mask], gauss, color='maroon', linewidth=1, label=r'Fitted function')
-  gauss, mask = fit_gauss(hsigma.axis('sigma').centers(), hsigma.values()[('CB',)])
-  ax.plot(hsigma.axis('sigma').centers()[mask], gauss, color='navy', linewidth=1, label=r'Fitted function')
+  # gauss, mask = fit_gauss(hsigma.axis('sigma').centers(), hsigma.values()[('DNN',)])
+  # ax.plot(hsigma.axis('sigma').centers()[mask], gauss, color='maroon', linewidth=1, label=r'Fitted function')
+  # if y_cb is not None:
+  #   gauss, mask = fit_gauss(hsigma.axis('sigma').centers(), hsigma.values()[('CB',)])
+  #   ax.plot(hsigma.axis('sigma').centers()[mask], gauss, color='navy', linewidth=1, label=r'Fitted function')
   filename = 'sigma_'+tag+'.pdf'
   fig.savefig(filename)
   cprint('imgcat '+filename,'green')
   return
 
-def plot_mhiggs(tag, y_test, y_pred, y_cb):
+def plot_mhiggs(tag, y_pred, y_test=None, y_cb=None):
   fig = plt.figure()
   hmh = hist.Hist("Events",
                       hist.Cat("method", "Reco method"),
-                      hist.Bin("mhiggs", "Higgs mass", 30, 0, 300))
-  hmh.fill(method="Generated", mhiggs=y_test)
+                      hist.Bin("mhiggs", "Higgs mass", 50, 0,500))
   hmh.fill(method="DNN", mhiggs=y_pred)
-  hmh.fill(method="CB", mhiggs=y_cb)
+  if y_test is not None:
+    hmh.fill(method="Generated", mhiggs=y_test)
+  if y_cb is not None:
+    hmh.fill(method="CB", mhiggs=y_cb)
   ax = hist.plot1d(hmh, overlay="method", stack=False)
   filename = 'mh_'+tag+'.pdf'
   fig.savefig(filename)
   cprint('imgcat '+filename,'green')
   return 
 
-def find_max_eff(tag, y_test, y_pred, mass_window_width=40): 
+def find_max_eff(tag, y_pred, y_test, mass_window_width=40): 
   sigma_dnn = y_test - y_pred
 
   nevents = sigma_dnn.size
@@ -119,12 +125,12 @@ def eval_dnn(model, model_name, test_data_path, do_log, do_figs=True):
   #   else:
   #     y_test_good, y_pred_good, y_cb_good = y_test, y_pred, y_cb
 
-  find_max_eff('DNN', y_test, y_pred, mass_window_width=40)
-    # find_max_eff('CB__'+iseln, y_test_good, y_cb_good, mass_window_width=40)
+  find_max_eff('DNN', y_pred, y_test, mass_window_width=40)
+    # find_max_eff('CB__'+iseln, y_cb_good, y_test_good, mass_window_width=40)
 
     # tag = iseln+'__'+model_name  # for filename
-    # plot_resolution(tag, y_test_good, y_pred_good, y_cb_good)
-    # plot_mhiggs(tag, y_test_good, y_pred_good, y_cb_good)
+    # plot_resolution(tag, y_pred_good, y_test_good, y_cb_good)
+    # plot_mhiggs(tag, y_pred_good, y_test_good, y_cb_good)
 
   return
 

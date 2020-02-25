@@ -35,7 +35,9 @@ def get_data(model_name, path, extra_path='', do_log=False, training=False, nent
   branches.extend(obj_feats)
   branches.extend(glob_feats)
   tree = uproot.open(path=path)['tree']
-  print('Found %i entries' % len(tree))
+  nsig = len(tree)
+  if (nent!=-1): nsig = nent
+  print('Found %i entries' % nsig)
   
   awk_arrays = tree.arrays(branches, entrystop=nent)
 
@@ -48,7 +50,8 @@ def get_data(model_name, path, extra_path='', do_log=False, training=False, nent
     extra_tree = uproot.open(path=extra_path)['tree']
     print('Found %i entries in additional tree' % len(extra_tree))   
     awk_arrays_bkg = extra_tree.arrays(branches, entrystop=nent)
-    awk_arrays_bkg[b'mhiggs'] = np.random.randint(0,500,len(awk_arrays_bkg[branches[0]]))
+    awk_arrays_bkg[b'mhiggs'] = awk_arrays_bkg[b'mjj'].min()
+    # awk_arrays_bkg[b'mhiggs'] = np.random.randint(50,250,len(awk_arrays_bkg[branches[0]]))
     awk_arrays_bkg[b'mhiggs'] = np.around(awk_arrays_bkg[b'mhiggs']/5, decimals=0)*5
     for branch in branches:
       awk_arrays[branch] = awkward.concatenate([awk_arrays[branch],awk_arrays_bkg[branch]],axis=0)
@@ -111,4 +114,4 @@ def get_data(model_name, path, extra_path='', do_log=False, training=False, nent
   if training: 
     y_data_ = awk_arrays[b'mhiggs']
 
-  return x_data_, y_data_
+  return x_data_, y_data_, nsig
