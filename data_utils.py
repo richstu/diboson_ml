@@ -2,56 +2,41 @@
 
 import math, json
 import numpy as np
-import uproot
-import awkward
+import uproot, awkward
 from coffea import hist
-import matplotlib.pyplot as plt
 from scipy.optimize import leastsq
-import tensorflow.keras as keras
-from pprint import pprint
 from termcolor import colored, cprint
 
-def define_sequential_model(nfeats, dense_layers, nodes, loss, optimizer, activation):
-  model_ = keras.models.Sequential()
-  model_.add(keras.layers.Input(shape=(nfeats)))
-  for i in range(dense_layers):
-    model_.add(keras.layers.Dense(nodes, activation=activation, kernel_initializer="lecun_normal"))
-  model_.add(keras.layers.Dense(1))
-  model_.compile(loss=loss, optimizer=optimizer)
-  model_.summary()
-  return model_
+def get_data(model_name, path_sig, path_bkg='', do_log=False, training=False, nent=-1, dummy=-9):
 
-def get_data(model_name, path, extra_path='', do_log=False, training=False, nent=-1, dummy=-9):
-  debug = False
+  # Calculate total number of features
   nobj = 5 # this can't be changed without remaking higfeats ntuples since mjj also has to change
   obj_feats = [b'jet_brank_pt',b'jet_brank_eta',b'jet_brank_phi',b'jet_brank_m',b'jet_brank_deepcsv']
   ncombinations = int(math.factorial(nobj)/(2*math.factorial(nobj-2)))
   glob_feats = [b'mjj',b'drjj']
   nfeats = nobj*len(obj_feats) + ncombinations*len(glob_feats)
 
+  # read branches from ROOT tree
   branches = []
-  if training: 
+  if training or 'higfeats' in path_sig: 
     branches.append(b'mhiggs')
   branches.extend(obj_feats)
   branches.extend(glob_feats)
-  tree = uproot.open(path=path)['tree']
-  nsig = len(tree)
-  if (nent!=-1): nsig = nent
-  print('Found %i entries' % nsig)
-  
+  tree = uproot.open(path=path_sig)['tree']
   if (nent==-1): 
+    nsig = len(tree)
     awk_arrays = tree.arrays(branches)
   else: 
+    nsig = nent
     awk_arrays = tree.arrays(branches, entrystop=nent)
+  print('Loading signal data from: '+colored(path_sig,'yellow'))
+  print('Found %i entries' % nsig)
 
-  if debug:
-    cprint("Training sig:","red")
-    for branch in branches:
-      print(awk_arrays[branch])
-
-  if extra_path!='': # if we want to add bkg events to the training
-    extra_tree = uproot.open(path=extra_path)['tree']
-    print('Found %i entries in additional tree' % len(extra_tree))  
+  # if we want to add bkg events to the training, read bkg. tree and generate the output variable
+  if path_bkg!='': 
+    extra_tree = uproot.open(path=path_bkg)['tree']
+    print('Loading background data from: '+colored(path_bkg,'yellow'))
+    print('Found %i entries' % len(extra_tree))  
     if (nent==-1): 
       awk_arrays_bkg = extra_tree.arrays(branches)
     else: 
@@ -62,14 +47,10 @@ def get_data(model_name, path, extra_path='', do_log=False, training=False, nent
     for branch in branches:
       awk_arrays[branch] = awkward.concatenate([awk_arrays[branch],awk_arrays_bkg[branch]],axis=0)
 
-  if debug:
-    cprint("Training data:","red")
-    for branch in branches:
-      print(awk_arrays[branch])
-
+  # reserve numpy array to fit all data to limit copying 
   x_data_ = np.empty(shape=(len(awk_arrays[branches[0]]),nfeats))
 
-  # normalize all features, saving the normalization parameters for the higgs mass in order to transform the output
+  # normalize all features, saving (reading) the normalization parameters when training (doing inference)
   norm_dict = {}
   if not training:
     with open(model_name+".json","r") as fin:
@@ -99,7 +80,7 @@ def get_data(model_name, path, extra_path='', do_log=False, training=False, nent
     with open(model_name+".json","w") as fout:
       fout.write(json.dumps(norm_dict))
 
-  # shape up jet features data
+  # reshape and interleave jet features data to create a column stack and fill in the reserved np array x_data
   for i, branch in enumerate(obj_feats):
     # pad the jet arrays so all events have 5 jets
     awk_arrays[branch] = awk_arrays[branch].pad(nobj,axis=0,clip=True).fillna(dummy)
@@ -110,7 +91,7 @@ def get_data(model_name, path, extra_path='', do_log=False, training=False, nent
     # this will fill up the x_data array until nobj*len(obj_feats) along axis 1
     x_data_[:,i:nobj*len(obj_feats):len(obj_feats)] = awk_arrays[branch]
 
-  # shape up global features data
+  # reshape global features and fill in the reserved np array x_data
   for i, branch in enumerate(glob_feats):
     awk_arrays[branch] = awk_arrays[branch].pad(ncombinations,axis=0,clip=True).fillna(dummy)
     awk_arrays[branch] = awk_arrays[branch].regular()
@@ -118,7 +99,7 @@ def get_data(model_name, path, extra_path='', do_log=False, training=False, nent
     x_data_[:,nobj*len(obj_feats)+i::len(glob_feats)] = awk_arrays[branch]
   
   y_data_ = None
-  if training: 
+  if training or 'higfeats' in path_sig: # true Higgs value only makes sense in signal training sample
     y_data_ = awk_arrays[b'mhiggs']
 
-  return x_data_, y_data_, nsig
+  return x_data_, y_data_
